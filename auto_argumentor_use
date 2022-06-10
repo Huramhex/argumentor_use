@@ -1,0 +1,121 @@
+"""
+Author: Huramhex
+"""
+
+import re
+import Augmentor
+import glob
+import os
+import random
+import cv2
+import numpy as np
+
+
+def start(train_path, ground_truth_path):
+    train_glob = glob.glob(train_path + '/*.png')
+    masks_glob = glob.glob(ground_truth_path + '/*.png')
+
+    train_list = sorted(train_glob, key=lambda x: float(re.findall("([0-9]+?)\.png", x)[0]))
+    masks_list = sorted(masks_glob, key=lambda x: float(re.findall("([0-9]+?)\.png", x)[0]))
+
+    train_argu_path = os.path.join(train_path, 'argu_images')
+    mask_argu_path = os.path.join(ground_truth_path, 'argu_masks')
+    if not os.path.lexists(train_argu_path):
+        os.mkdir(train_argu_path)
+    if not os.path.lexists(mask_argu_path):
+        os.mkdir(mask_argu_path)
+
+    if len(train_list) != len(masks_list):
+        print("trains can't match masks")
+
+        return 0
+
+    i = 1
+    for file, mask in zip(train_list, masks_list):
+
+        sub_train_argu_path = os.path.join(train_argu_path, str(i))
+        if not os.path.lexists(sub_train_argu_path):
+            os.mkdir(sub_train_argu_path)
+        img = cv2.imread(file)
+        cv2.imwrite(sub_train_argu_path + '/{}.png'.format(i), img.astype(np.uint8))
+
+        sub_mask_argu_path = os.path.join(mask_argu_path, str(i))
+        if not os.path.lexists(sub_mask_argu_path):
+            os.mkdir(sub_mask_argu_path)
+        msk = cv2.imread(mask)
+        cv2.imwrite(sub_mask_argu_path + '/{}.png'.format(i), msk.astype(np.uint8))
+
+        i += 1
+
+    print("%s folder has been created!" % str(i - 1))
+
+    return int(i), train_argu_path, mask_argu_path  # 返回真实数量 + 1
+
+
+def doAugment(num, train_argu_path, mask_argu_path):
+    sum = 0
+    for i in range(1, num):
+        p = Augmentor.Pipeline(os.path.join(train_argu_path, str(i)))
+        p.ground_truth(os.path.join(mask_argu_path, str(i)))
+        p.rotate(probability=0.5, max_left_rotation=5, max_right_rotation=5)  # 旋转
+        p.flip_left_right(probability=0.5)  # 按概率左右翻转
+        p.zoom_random(probability=0.6, percentage_area=0.9)  # 随即将一定比例面积的图形放大至全图
+        p.flip_top_bottom(probability=0.6)  # 按概率随即上下翻转
+        p.random_distortion(probability=0.7, grid_width=10, grid_height=10, magnitude=10)  # 小块变形
+        count = random.randint(8, 10)
+        print("\nNo.%s data is being augmented and %s data will be created" % (i, count))
+        sum = sum + count
+        p.sample(count)
+        print("Done")
+    print("%s pairs of data has been created totally" % sum)
+
+
+def copy_images(path, target_path):
+    path_dir = os.listdir(path)
+    sum = len(path_dir)
+    dir_num = 0
+    for i in range(sum):
+        i += 1
+        file_path = os.path.join(path, str(i), 'output', '*.png')
+        file_list = glob.glob(file_path)
+
+        num = len(file_list) // 2
+
+        for file, j in zip(file_list, range(len(file_list))):
+            j += 1
+
+            if j > num:
+                img = cv2.imread(file, -1)
+                img_mask = img[:, :, 1]
+                target_mask_path = os.path.join(target_path, 'masks')
+                if not os.path.lexists(target_mask_path):
+                    os.mkdir(target_mask_path)
+                mask_file_name = os.path.join(target_mask_path, str(i) + '_' + str(j - num) + '.png')
+                cv2.imwrite(mask_file_name, img_mask.astype(np.uint8))
+                print('Finish mask' + str(mask_file_name))
+
+
+            else:
+                img = cv2.imread(file, -1)
+                target_image_path = os.path.join(target_path, 'images')
+                if not os.path.lexists(target_image_path):
+                    os.mkdir(target_image_path)
+                image_file_name = os.path.join(target_image_path, str(i) + '_' + str(j) + '.png')
+                cv2.imwrite(image_file_name, img.astype(np.uint8))
+                print('Finish image' + str(image_file_name))
+        dir_num += j
+
+    print('Finish：{} files'.format(dir_num))
+
+
+def main(train_path, ground_truth_path, target_path):
+    num, train_argu_path, mask_argu_path = start(train_path, ground_truth_path)
+    doAugment(num, train_argu_path, mask_argu_path)
+    copy_images(train_argu_path, target_path)
+
+
+if __name__ == '__main__':
+    train_folder = r'.\images'
+    ground_truth_folder = r'.\masks'
+    target_folder = r'.\argu_sum'
+    main(train_folder, ground_truth_folder, target_folder)
